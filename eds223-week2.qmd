@@ -1,0 +1,216 @@
+---
+title: "Eds223-week2"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+# Set up
+
+```{r}
+# Load necessary packages
+rm(list = ls())
+library(sf)
+library(tmap)
+library(tidyverse)
+library(spData)  
+```
+
+# Simple features in SF
+
+```{r}
+# Define point for london using lat and long
+london_point <- st_point(c(0.1, 51.5))
+
+# Add coordinate reference system
+london_geom <- st_sfc(london_point, crs = 4326)
+
+# Create data frame of attributes about London
+london_attrib <- data.frame(
+  name = "London",
+  temperature = 25,
+  date = as.Date("2017-06-21")
+)
+
+london_sf <- st_sf(london_attrib, geometry = london_geom)
+
+# Check class 
+class(london_sf)
+
+# Check out what CRS looks like
+st_crs(london_sf)
+st_crs(london_sf)$IsGeographic
+```
+
+# Existing sf object
+
+```{r}
+world <- spData::world
+class(world)
+
+# Names of columns
+names(world)
+
+# Summary function...can be treated like typical data frame
+summary(world$lifeExp)
+```
+
+```{r}
+# Geometry column is 'sticky'
+world_df <- world %>%
+  select(-geom)
+
+colnames(world_df)
+```
+
+```{r}
+# Remove geometry col and convert to DF
+
+world_df <- st_drop_geometry(world)
+
+class(world_df)
+```
+
+# Coordinate reference systems and projections
+
+## Reprojecting Data
+
+```{r}
+# Make another sf object with a project coordinate system
+london_proj <- data.frame(x = 53000, y = 180000) %>%
+  st_as_sf(coords = c("x", "y"), crs = "EPSG:27700")
+
+st_crs(london_proj) == st_crs(london_sf)
+
+# Transform CRS to match 
+london_sf_transform <- st_transform(london_sf, crs = st_crs(london_proj))
+```
+
+```{r}
+# Make a conditional to see if datasets CRS march
+
+if(st_crs(london_sf_transform) == st_crs(london_proj)) {
+  print("coordinate reference systems of datasets match")
+}  else {
+  warning("cooridnate reference systems to not match")
+}
+```
+
+## Changing map projections
+
+```{r}
+tm_shape(world, projection = 8857) +
+  tm_fill(col = "area_km2")
+
+```
+
+```{r}
+# Make the same map, but change projection
+tm_shape(world, projection = 3395) +
+  tm_fill(col = "area_km2")
+```
+
+# Vector Attribute Subsetting
+
+```{r}
+# Dlpyr functions work
+
+# Select columns
+world %>%
+  select(name_long, pop)
+
+# Remove columns
+world %>%
+  select(-subregion)
+
+# Select and rename columns
+world %>%
+  select(name = name_long, population = pop)
+
+# Filter
+world1 <- world %>%
+  filter(area_km2 < 10000)
+
+# Chain commands
+world %>%
+  filter(continent == "Asia") %>%
+  select(name_long, continent, lifeExp) %>%
+  slice_max(lifeExp) %>%
+  st_drop_geometry()
+```
+
+## Vector attribute aggregation
+
+```{r}
+# Find total pop by cont
+world %>%
+  group_by(continent) %>%
+  summarise(population = sum(pop, na.rm = TRUE)) %>%
+  st_drop_geometry()
+```
+
+# Joins with vector attributes
+
+```{r}
+coffee_data <- spData::coffee_data
+head(coffee_data)
+
+# Do we have coffee data for all countries? Can be used for condtn statement
+nrow(coffee_data)
+nrow(world)
+```
+
+```{r}
+# Perform left join
+world_coffee <- left_join(world, coffee_data, by = 'name_long')
+
+```
+
+```{r}
+# Make a map of left join
+tm_shape(world_coffee) +
+  tm_fill(col = "coffee_production_2017",
+          title = "Coffee Production 2017")
+```
+
+```{r}
+# Perform inner join (matches from both data)
+world_coffee_inner <- inner_join(world, coffee_data, by = 'name_long')
+
+# Build out a check
+if (nrow(world_coffee_inner) < nrow(coffee_data)) {
+  warning("inner join does not match original data. potential data loss")
+} 
+```
+
+```{r}
+# Compare 2 vectors and see what is missing
+setdiff(coffee_data$name_long, world$name_long)
+
+# Congo is not in world data due to naming conventions
+```
+
+
+```{r}
+# Search world data set to find DRC 
+drc <- stringr::str_subset(world$name_long, "Dem*.+Congo")
+
+# set variable and update coffee data 
+coffee_data$name_long[stringr::str_detect(coffee_data$name_long, "Congo")] <- drc
+```
+
+```{r}
+# Make a map of data join
+tm_shape(world_coffee_inner) +
+  tm_polygons(fill = "coffee_production_2017",
+              title = "Coffee Production (2017)") +
+  tm_layout(legend.outside = TRUE)
+```
+
+```{r}
+coffee_world <- left_join(coffee_data, world, by = "name_long")
+class(coffee_world)
+
+# Left joins add on to first data set, including type
+```
+
